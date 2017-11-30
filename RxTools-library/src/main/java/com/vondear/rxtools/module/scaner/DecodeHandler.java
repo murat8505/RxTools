@@ -57,7 +57,7 @@ final class DecodeHandler extends Handler {
             Vector<BarcodeFormat> DATA_MATRIX_FORMATS = new Vector<BarcodeFormat>(1);
             DATA_MATRIX_FORMATS.add(BarcodeFormat.DATA_MATRIX);
 
-            // 这里设置可扫描的类型，我这里选择了都支持
+            // 这里设置可扫描的类型，这里选择了都支持
             decodeFormats.addAll(ONE_D_FORMATS);
             decodeFormats.addAll(QR_CODE_FORMATS);
             decodeFormats.addAll(DATA_MATRIX_FORMATS);

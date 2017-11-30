@@ -5,85 +5,72 @@ import android.app.Activity;
 import android.content.ContentResolver;
 import android.content.DialogInterface;
 import android.content.Intent;
-import android.content.pm.PackageManager;
 import android.graphics.Bitmap;
 import android.graphics.Point;
 import android.net.Uri;
 import android.os.Bundle;
 import android.os.Handler;
 import android.provider.MediaStore;
-import android.support.v4.app.ActivityCompat;
-import android.support.v4.content.ContextCompat;
 import android.util.Log;
 import android.view.SurfaceHolder;
-import android.view.SurfaceView;
 import android.view.View;
-import android.widget.ImageView;
-import android.widget.LinearLayout;
-import android.widget.RelativeLayout;
+import android.view.animation.Animation;
+import android.view.animation.LinearInterpolator;
+import android.view.animation.ScaleAnimation;
 
 import com.google.zxing.BarcodeFormat;
 import com.google.zxing.Result;
+import com.tbruyelle.rxpermissions2.Permission;
+import com.tbruyelle.rxpermissions2.RxPermissions;
 import com.vondear.rxtools.R;
-import com.vondear.rxtools.RxAnimationTool;
 import com.vondear.rxtools.RxBarTool;
 import com.vondear.rxtools.RxBeepTool;
 import com.vondear.rxtools.RxConstants;
 import com.vondear.rxtools.RxDataTool;
 import com.vondear.rxtools.RxPhotoTool;
-import com.vondear.rxtools.RxQrBarTool;
 import com.vondear.rxtools.RxSPTool;
-import com.vondear.rxtools.interfaces.OnRxScanerListener;
 import com.vondear.rxtools.module.scaner.CameraManager;
 import com.vondear.rxtools.module.scaner.CaptureActivityHandler;
-import com.vondear.rxtools.module.scaner.decoding.InactivityTimer;
+import com.vondear.rxtools.module.scaner.RxQrBarTool;
 import com.vondear.rxtools.view.RxToast;
 import com.vondear.rxtools.view.dialog.RxDialogSure;
 
 import java.io.IOException;
 import java.util.concurrent.atomic.AtomicInteger;
 
+import io.reactivex.functions.Consumer;
+
 public class ActivityScanerCode extends ActivityBase {
 
-    private static OnRxScanerListener mScanerListener;//扫描结果监听
-    private InactivityTimer inactivityTimer;
+    private ScanerCodeBinding mBinding;
+
     private CaptureActivityHandler handler;//扫描处理
-    private RelativeLayout mContainer = null;//整体根布局
-    private RelativeLayout mCropLayout = null;//扫描框根布局
-    private int mCropWidth = 0;//扫描边界的宽度
-    private int mCropHeight = 0;//扫描边界的高度
     private boolean hasSurface;//是否有预览
     private boolean vibrate = true;//扫描成功后是否震动
-    private boolean mFlashing = true;//闪光灯开启状态
-    private LinearLayout mLlScanHelp;//生成二维码 & 条形码 布局
-    private ImageView mIvLight;//闪光灯 按钮
     private RxDialogSure rxDialogSure;//扫描结果显示框
-
-    public static void setScanerListener(OnRxScanerListener scanerListener) {
-        mScanerListener = scanerListener;
-    }
 
     @Override
     public void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         RxBarTool.setNoTitle(this);
-        setContentView(R.layout.activity_scaner_code);
+        mBinding = ScanerCodeBinding.inflate(getLayoutInflater());
+        setContentView(mBinding.getRoot());
+        mBinding.setView(this);
+
         RxBarTool.setTransparentStatusBar(this);
-        initView();//界面控件初始化
-        initScanerAnimation();//扫描动画初始化
-        CameraManager.init(mContext);//初始化 CameraManager
+        initScanerAnimation(); // 扫描动画初始化
+        CameraManager.init(mContext); // 初始化 CameraManager
         hasSurface = false;
-        inactivityTimer = new InactivityTimer(this);
+        requestPermissions();
     }
 
     @SuppressWarnings("deprecation")
     @Override
     protected void onResume() {
         super.onResume();
-        SurfaceView surfaceView = (SurfaceView) findViewById(R.id.capture_preview);
-        SurfaceHolder surfaceHolder = surfaceView.getHolder();
+        SurfaceHolder surfaceHolder = mBinding.capturePreview.getHolder();
         if (hasSurface) {
-            initCamera(surfaceHolder);//Camera初始化
+            initCamera(surfaceHolder); // Camera初始化
         } else {
             surfaceHolder.addCallback(new SurfaceHolder.Callback() {
                 @Override
@@ -121,69 +108,48 @@ public class ActivityScanerCode extends ActivityBase {
 
     @Override
     protected void onDestroy() {
-        inactivityTimer.shutdown();
-        mScanerListener = null;
         super.onDestroy();
     }
 
-    private void initView() {
-        mIvLight = (ImageView) findViewById(R.id.top_mask);
-        mContainer = (RelativeLayout) findViewById(R.id.capture_containter);
-        mCropLayout = (RelativeLayout) findViewById(R.id.capture_crop_layout);
-        mLlScanHelp = (LinearLayout) findViewById(R.id.ll_scan_help);
-        //请求Camera权限 与 文件读写 权限
-        if (ContextCompat.checkSelfPermission(mContext, Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED &&
-                ContextCompat.checkSelfPermission(mContext, Manifest.permission.WRITE_EXTERNAL_STORAGE) != PackageManager.PERMISSION_GRANTED) {
-            ActivityCompat.requestPermissions(mContext, new String[]{Manifest.permission.CAMERA, Manifest.permission.WRITE_EXTERNAL_STORAGE}, 1);
-        }
+    private void requestPermissions() {
+        RxPermissions rxPermission = new RxPermissions(ActivityScanerCode.this);
+        rxPermission
+                .requestEach(
+                        Manifest.permission.WRITE_EXTERNAL_STORAGE,
+                        Manifest.permission.CAMERA)
+                .subscribe(new Consumer<Permission>() {
+                    @Override
+                    public void accept(Permission permission) throws Exception {
+                        if (permission.granted) {
+                            // 用户已经同意该权限
+                        } else if (permission.shouldShowRequestPermissionRationale) {
+                            // 用户拒绝了该权限，没有选中『不再询问』,那么下次再次启动时，还会提示请求权限的对话框
+                        } else {
+                            // 用户拒绝了该权限，并且选中『不再询问』
+                        }
+                    }
+                });
     }
 
     private void initScanerAnimation() {
-        ImageView mQrLineView = (ImageView) findViewById(R.id.capture_scan_line);
-        RxAnimationTool.ScaleUpDowm(mQrLineView);
+        ScaleAnimation animation = new ScaleAnimation(1.0f, 1.0f, 0.0f, 1.0f);
+        animation.setRepeatCount(-1);
+        animation.setRepeatMode(Animation.RESTART);
+        animation.setInterpolator(new LinearInterpolator());
+        animation.setDuration(1200);
+        mBinding.captureScanLine.startAnimation(animation);
     }
 
-    public int getCropWidth() {
-        return mCropWidth;
+    public void onBackClick(View view) {
+        finish();
     }
 
-    public void setCropWidth(int cropWidth) {
-        mCropWidth = cropWidth;
-        CameraManager.FRAME_WIDTH = mCropWidth;
-
+    public void onLightClick(View view) {
+        CameraManager.get().light();
     }
 
-    public int getCropHeight() {
-        return mCropHeight;
-    }
-
-    public void setCropHeight(int cropHeight) {
-        this.mCropHeight = cropHeight;
-        CameraManager.FRAME_HEIGHT = mCropHeight;
-    }
-
-    public void btn(View view) {
-        int viewId = view.getId();
-        if (viewId == R.id.top_mask) {
-            light();
-        } else if (viewId == R.id.top_back) {
-            finish();
-        } else if (viewId == R.id.top_openpicture) {
-            RxPhotoTool.openLocalImage(mContext);
-        }
-    }
-
-    private void light() {
-        if (mFlashing) {
-            mFlashing = false;
-            // 开闪光灯
-            CameraManager.get().openLight();
-        } else {
-            mFlashing = true;
-            // 关闪光灯
-            CameraManager.get().offLight();
-        }
-
+    public void onOpenPictureClick(View view) {
+        RxPhotoTool.openLocalImage(mContext);
     }
 
     private void initCamera(SurfaceHolder surfaceHolder) {
@@ -192,18 +158,17 @@ public class ActivityScanerCode extends ActivityBase {
             Point point = CameraManager.get().getCameraResolution();
             AtomicInteger width = new AtomicInteger(point.y);
             AtomicInteger height = new AtomicInteger(point.x);
-            int cropWidth = mCropLayout.getWidth() * width.get() / mContainer.getWidth();
-            int cropHeight = mCropLayout.getHeight() * height.get() / mContainer.getHeight();
-            setCropWidth(cropWidth);
-            setCropHeight(cropHeight);
-        } catch (IOException | RuntimeException ioe) {
+            CameraManager.FRAME_WIDTH = mBinding.captureScanerLayout.getWidth() * width.get()
+                    / mBinding.captureContainer.getWidth();
+            CameraManager.FRAME_HEIGHT = mBinding.captureScanerLayout.getHeight() * height.get()
+                    / mBinding.captureContainer.getHeight();
+        } catch (IOException | RuntimeException e) {
             return;
         }
         if (handler == null) {
             handler = new CaptureActivityHandler(ActivityScanerCode.this);
         }
     }
-    //========================================打开本地图片识别二维码 end=================================
 
     //--------------------------------------打开本地图片识别二维码 start---------------------------------
     @Override
@@ -220,23 +185,17 @@ public class ActivityScanerCode extends ActivityBase {
                 // 开始对图像资源解码
                 Result rawResult = RxQrBarTool.decodeFromPhoto(photo);
                 if (rawResult != null) {
-                    if (mScanerListener == null) {
-                        initDialogResult(rawResult);
-                    } else {
-                        mScanerListener.onSuccess("From to Picture", rawResult);
-                    }
+                    initDialogResult(rawResult);
                 } else {
-                    if (mScanerListener == null) {
-                        RxToast.error("图片识别失败.");
-                    } else {
-                        mScanerListener.onFail("From to Picture", "图片识别失败");
-                    }
+                    RxToast.error("图片识别失败.");
                 }
             } catch (IOException e) {
                 e.printStackTrace();
             }
         }
     }
+    //========================================打开本地图片识别二维码 end=================================
+
     //==============================================================================================解析结果 及 后续处理 end
 
     private void initDialogResult(Result result) {
@@ -280,20 +239,16 @@ public class ActivityScanerCode extends ActivityBase {
     }
 
     public void handleDecode(Result result) {
-        inactivityTimer.onActivity();
         RxBeepTool.playBeep(mContext, vibrate);//扫描成功之后的振动与声音提示
 
         String result1 = result.getText();
         Log.v("二维码/条形码 扫描结果", result1);
-        if (mScanerListener == null) {
-            RxToast.success(result1);
-            initDialogResult(result);
-        } else {
-            mScanerListener.onSuccess("From to Camera", result);
-        }
+        RxToast.success(result1);
+        initDialogResult(result);
     }
 
     public Handler getHandler() {
         return handler;
     }
+
 }

@@ -316,7 +316,20 @@ public final class CameraManager {
         return configManager.getCameraResolution();
     }
 
-    public void openLight() {
+
+    public void light() {
+        if (camera != null) {
+            parameter = camera.getParameters();
+            String flashMode = parameter.getFlashMode();
+            if (Camera.Parameters.FLASH_MODE_OFF.equals(flashMode)) {
+                openLight();
+            } else if (Camera.Parameters.FLASH_MODE_TORCH.equals(flashMode)) {
+                offLight();
+            }
+        }
+    }
+
+    private void openLight() {
         if (camera != null) {
             parameter = camera.getParameters();
             parameter.setFlashMode(Camera.Parameters.FLASH_MODE_TORCH);
@@ -324,7 +337,7 @@ public final class CameraManager {
         }
     }
 
-    public void offLight() {
+    private void offLight() {
         if (camera != null) {
             parameter = camera.getParameters();
             parameter.setFlashMode(Camera.Parameters.FLASH_MODE_OFF);
